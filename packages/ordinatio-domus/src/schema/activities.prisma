@@ -1,0 +1,45 @@
+// ===========================================
+// ORDINATIO ACTIVITIES — Prisma Schema Fragment
+// ===========================================
+// ActivityLog model for event logging with
+// sticky item resolution.
+// ===========================================
+
+enum ActivitySeverity {
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+}
+
+model ActivityLog {
+  id          String    @id @default(cuid())
+
+  // Actor
+  userId      String?
+  system      Boolean   @default(false)
+
+  // Targets (plain String? for standalone use — FKs added by host app)
+  orderId            String?
+  clientId           String?
+  placementAttemptId String?
+
+  // Event
+  action      String
+  description String
+  metadata    Json?
+
+  // Severity and sticky behavior
+  severity           ActivitySeverity @default(INFO)
+  requiresResolution Boolean          @default(false)
+  resolvedAt         DateTime?
+  resolvedBy         String?
+
+  createdAt   DateTime  @default(now())
+
+  @@index([orderId])
+  @@index([clientId])
+  @@index([createdAt])
+  @@index([action])
+  @@index([requiresResolution, resolvedAt])
+}

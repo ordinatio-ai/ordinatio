@@ -1,0 +1,208 @@
+// ===========================================
+// ORDINATIO EMAIL — Schema Fragment
+// ===========================================
+// 8 models, 4 enums. Standalone — no FK deps
+// on external models. Fields like clientId and
+// contactId remain as plain String? (the
+// consuming app handles those relations).
+// ===========================================
+
+// --- Enums ---
+
+enum EmailProvider {
+  GMAIL
+  OUTLOOK
+  IMAP
+}
+
+enum EmailStatus {
+  INBOX
+  ARCHIVED
+}
+
+enum EmailRecipient {
+  CLIENT
+  CLOTHIER
+  ADMIN
+  CUSTOM
+}
+
+enum ScheduledEmailStatus {
+  DRAFT
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+// --- Models ---
+
+model EmailAccount {
+  id              String    @id @default(cuid())
+  provider        EmailProvider
+  email           String    @unique
+  displayName     String?
+  isPrimary       Boolean   @default(false)
+  capabilities    Json?
+  accessToken     String
+  refreshToken    String
+  tokenExpiresAt  DateTime
+  imapHost        String?
+  imapPort        Int?
+  imapSecurity    String?
+  smtpHost        String?
+  smtpPort        Int?
+  smtpSecurity    String?
+  lastSyncAt      DateTime?
+  syncCursor      String?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  emails          EmailMessage[]
+  scheduledEmails ScheduledEmail[]
+}
+
+model EmailMessage {
+  id              String    @id @default(cuid())
+  accountId       String
+  account         EmailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  providerId      String
+  threadId        String?
+  subject         String
+  fromEmail       String
+  fromName        String?
+  toEmail         String
+  snippet         String
+  bodyHtml        String?   @db.Text
+  bodyText        String?   @db.Text
+  contentFetched  Boolean   @default(false)
+  attachments     Json?
+  emailDate       DateTime
+  status          EmailStatus @default(INBOX)
+  archivedAt      DateTime?
+  archivedBy      String?
+
+  // CRM linking (plain strings — no FK to external models)
+  clientId        String?
+  clientLinkedAt  DateTime?
+  clientLinkedBy  String?
+  contactId       String?
+
+  // OAEM protocol metadata
+  oaemTrustTier   Int?
+  oaemThreadId    String?
+  oaemStateVersion Int?
+  oaemIntent      String?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([accountId])
+  @@index([clientId])
+  @@index([contactId])
+  @@index([threadId])
+  @@index([emailDate])
+}
+
+model EmailTemplate {
+  id         String   @id @default(cuid())
+  name       String   @unique
+  category   String
+  subject    String
+  bodyHtml   String   @db.Text
+  isActive   Boolean  @default(true)
+  isDefault  Boolean  @default(false)
+  sortOrder  Int      @default(0)
+  createdBy  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model ScheduledEmail {
+  id            String              @id @default(cuid())
+  accountId     String
+  account       EmailAccount        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  toEmail       String
+  subject       String
+  bodyHtml      String              @db.Text
+  inReplyTo     String?
+  threadId      String?
+  agentContext  String?             @db.Text
+  attachments   Json?
+  scheduledFor  DateTime
+  status        ScheduledEmailStatus @default(PENDING)
+  errorMessage  String?
+  attempts      Int                 @default(0)
+  createdBy     String
+  sentAt        DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([accountId])
+  @@index([status, scheduledFor])
+}
+
+model EmailProviderDiscovery {
+  id            String   @id @default(cuid())
+  domain        String
+  provider      String
+  imapHost      String?
+  imapPort      Int?
+  imapSecurity  String?
+  smtpHost      String?
+  smtpPort      Int?
+  smtpSecurity  String?
+  authMethod    String
+  successCount  Int      @default(0)
+  failureCount  Int      @default(0)
+  lastAttemptAt DateTime @default(now())
+  lastSuccessAt DateTime?
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([domain, imapHost, imapPort])
+}
+
+// --- OAEM Protocol Models ---
+
+model OaemKeyPair {
+  id          String    @id @default(cuid())
+  kid         String    @unique
+  publicKey   Json
+  privateKey  Json
+  algorithm   String    @default("EdDSA")
+  isActive    Boolean   @default(true)
+  validFrom   DateTime  @default(now())
+  validUntil  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model OaemThreadLedger {
+  id                 String   @id @default(cuid())
+  threadId           String   @unique
+  currentState       Json
+  stateVersion       Int      @default(0)
+  latestHash         String
+  participantDomains String[]
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model OaemLedgerEntry {
+  id           String   @id @default(cuid())
+  threadId     String
+  stateVersion Int
+  capsuleHash  String
+  parentHash   String?
+  intent       String
+  issuer       String
+  capsuleRaw   String   @db.Text
+  trustTier    Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  @@index([threadId, stateVersion])
+}

@@ -1,0 +1,51 @@
+{
+  "name": "@ordinatio/core",
+  "version": "1.0.3",
+  "private": false,
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    },
+    "./covenant": "./src/covenant/index.ts",
+    "./governance": "./src/governance/index.ts",
+    "./context": "./src/context/index.ts",
+    "./execution": "./src/execution/index.ts",
+    "./council": "./src/council/index.ts",
+    "./storage": "./src/storage/index.ts",
+    "./construction": "./src/construction/index.ts",
+    "./covenants": "./src/covenants/index.ts",
+    "./admission": "./src/admission/index.ts",
+    "./crypto": "./src/crypto/index.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "import": "./dist/index.js",
+        "types": "./dist/index.d.ts"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --clean",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "5",
+    "vitest": "4.0.18"
+  }
+}

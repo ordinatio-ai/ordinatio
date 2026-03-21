@@ -1,0 +1,697 @@
+// ===========================================
+// @ordinatio/security — Error Registry (SECMON_100-304)
+// ===========================================
+// Rule 8 compliance: every error gets a unique,
+// timestamped reference ID with diagnostic metadata.
+// ===========================================
+
+/**
+ * Enhanced error builder v2 — full diagnostic object.
+ * Machines read this and know: what broke, when, where in the code,
+ * how bad it is, whether to retry, how to fix it, and the runtime
+ * data from the moment it happened.
+ */
+export function secmonError(code: string, context?: Record<string, unknown>): {
+  code: string;
+  ref: string;
+  timestamp: string;
+  module: string;
+  description: string;
+  severity: string;
+  recoverable: boolean;
+  diagnosis: string[];
+  context: Record<string, unknown>;
+} {
+  const def = SECMON_ERRORS[code];
+  const ts = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, '');
+
+  if (!def) {
+    return {
+      code,
+      ref: `${code}-${ts}`,
+      timestamp: new Date().toISOString(),
+      module: 'SECURITY',
+      description: `Unknown error code: ${code}`,
+      severity: 'error',
+      recoverable: false,
+      diagnosis: [],
+      context: context || {},
+    };
+  }
+
+  return {
+    code: def.code,
+    ref: `${def.code}-${ts}`,
+    timestamp: new Date().toISOString(),
+    module: 'SECURITY',
+    description: def.description,
+    severity: def.severity,
+    recoverable: def.recoverable,
+    diagnosis: [...def.diagnosis],
+    context: context || {},
+  };
+}
+
+export const SECMON_ERRORS = {
+  // 100-106: Event Logging
+  SECMON_100: {
+    code: 'SECMON_100',
+    file: 'event-logger.ts',
+    function: 'logSecurityEvent',
+    httpStatus: 500,
+    severity: 'error' as const,
+    recoverable: true,
+    description: 'Failed to log security event to database.',
+    diagnosis: [
+      'db.activityLog.create threw an error',
+      'Check database connectivity',
+      'Verify ActivityLog table exists',
+      'Event logging is non-blocking — returns placeholder event on failure',
+    ],
+  },
+  SECMON_101: {
+    code: 'SECMON_101',
+    file: 'event-logger.ts',
+    function: 'logSecurityEvent',
+    httpStatus: 400,
+    severity: 'error' as const,
+    recoverable: false,
+    description: 'Unknown security event type passed to logSecurityEvent.',
+    diagnosis: [
+      'eventType does not match any key in SECURITY_EVENT_CONFIG',
+      'Check SECURITY_EVENT_TYPES constants',
+      'May be a typo in the event type string',
+      'Throws Error — caller must handle',
+    ],
+  },
+  SECMON_102: {
+    code: 'SECMON_102',
+    file: 'event-queries.ts',
+    function: 'getSecurityEvents',
+    httpStatus: 500,
+    severity: 'error' as const,
+    recoverable: true,
+    description: 'Failed to query security events from database.',
+    diagnosis: [
+      'findMany or count query failed',
+      'Check database connectivity',
+      'Filters may produce invalid where clause',
+    ],
+  },
+  SECMON_103: {
+    code: 'SECMON_103',
+    file: 'event-queries.ts',
+    function: 'countSecurityEventsInWindow',
+    httpStatus: 500,
+    severity: 'error' as const,
+    recoverable: true,
+    description: 'Failed to count security events within time window.',
+    diagnosis: [
+      'Database query error during threshold check',
+      'Used by alert detection — failure may suppress alerts',
+      'Check windowMinutes and eventType parameters',
+    ],
+  },
+  SECMON_104: {
+    code: 'SECMON_104',
+    file: 'event-queries.ts',
+    function: 'getSecurityEventStats',
+    httpStatus: 500,
+    severity: 'error' as const,
+    recoverable: true,
+    description: 'Failed to compute security event statistics.',
+    diagnosis: [
+      'Database query error fetching activity logs',
+      'May be caused by very large result sets (check hours parameter)',
+      'Check database connectivity',
+    ],
+  },
+  SECMON_105: {
+    code: 'SECMON_105',
+    file: 'event-convenience.ts',
+    function: 'logLoginFailure',
+    httpStatus: null,
+    severity: 'warn' as const,
+    recoverable: true,
+    description: 'Failed to log login failure event (convenience wrapper).',
+    diagnosis: [
+      'Wraps logSecurityEvent — see SECMON_100 for root cause',
+      'Login failure tracking may be incomplete',
+      'Brute force detection depends on these events being logged',
+    ],
+  },
+  SECMON_106: {
+    code: 'SECMON_106',
+    file: 'event-convenience.ts',
+    function: 'logSuspiciousActivity',
+    httpStatus: null,
+    severity: 'warn' as const,
+    recoverable: true,
+    description: 'Failed to log suspicious activity event (convenience wrapper).',
+    diagnosis: [
+      'Wraps logSecurityEvent — see SECMON_100 for root cause',
+      'Suspicious activity tracking may be incomplete',
+      'Alert detection depends on these events being logged',
+    ],
+  },
+
+  // 200-206: Alert Management
+  SECMON_200: {
+    code: 'SECMON_200',
+    file: 'alert-management.ts',
+    function: 'createAlert',
+    httpStatus: 500,
+    severity: 'error' as const,
+    recoverable: true,
+    description: 'Failed to create security alert in database.',
+    diagnosis: [
+      'db.activityLog.create threw during alert creation',
+      'Check database connectivity',
+      'Returns null on failure — callers should handle gracefully',
+    ],
+  },
+  SECMON_201: {
+    code: 'SECMON_201',
+    file: 'alert-management.ts',
+    function: 'findExistingAlert',
+    httpStatus: 500,
+    severity: 'error' as const,
+    recoverable: true,
+    description: 'Failed to query for existing alert (deduplication check).',
+    diagnosis: [
+      'findMany query failed during deduplication',
+      'May result in duplicate alerts being created',
+      'Check the alertType and windowMinutes parameters',
+    ],
+  },
+  SECMON_202: {
+    code: 'SECMON_202',
+    file: 'alert-management.ts',
+    function: 'acknowledgeAlert',
+    httpStatus: 404,
+    severity: 'warn' as const,
+    recoverable: true,
+    description: 'Alert not found or not a valid security alert.',
+    diagnosis: [
+      'Alert ID does not exist in ActivityLog table',
+      'Or the metadata does not contain isSecurityAlert marker',
+      'Check that the alertId is correct',
+    ],
+  },
+  SECMON_203: {
+    code: 'SECMON_203',
+    file: 'alert-management.ts',
+    function: 'resolveAlert',
+    httpStatus: 404,
+    severity: 'warn' as const,
+    recoverable: true,
+    description: 'Alert not found for resolution.',
+    diagnosis: [
+      'Alert ID does not exist or metadata lacks isSecurityAlert marker',
+      'Alert may have already been deleted',
+      'Check that alertId is correct',
+    ],
+  },
+  SECMON_204: {
+    code: 'SECMON_204',
+    file: 'alert-management.ts',
+    function: 'getAlerts',
+    httpStatus: 500,
+    severity: 'error' as const,
+    recoverable: true,
+    description: 'Failed to query security alerts with filters.',
+    diagnosis: [
+      'findMany or count query failed',
+      'Check filter parameters (status, riskLevel, alertType, date range)',
+      'Check database connectivity',
+    ],
+  },
+  SECMON_205: {
+    code: 'SECMON_205',
+    file: 'alert-management.ts',
+    function: 'getAlertStats',
+    httpStatus: 500,
+    severity: 'error' as const,
+    recoverable: true,
+    description: 'Failed to compute alert statistics.',
+    diagnosis: [
+      'Database query error fetching alert activity logs',
+      'Check database connectivity',
+      'Stats are used by dashboard — UI may show stale data',
+    ],
+  },
+  SECMON_206: {
+    code: 'SECMON_206',
+    file: 'alert-management.ts',
+    function: 'activityToAlert',
+    httpStatus: null,
+    severity: 'warn' as const,
+    recoverable: true,
+    description: 'ActivityLog entry could not be converted to SecurityAlert.',
+    diagnosis: [
+      'Metadata is missing isSecurityAlert marker',
+      'Entry may not be a security alert (just a regular activity log)',
+      'Returns null — caller should filter out null results',
+    ],
+  },
+
+  // 300-304: Detection / Analysis
+  SECMON_300: {
+    code: 'SECMON_300',
+    file: 'alert-detection.ts',
+    function: 'checkSecurityPatterns',
+    httpStatus: null,
+    severity: 'error' as const,
+    recoverable: true,
+    description: 'Security pattern check failed — detection engine threw.',
+    diagnosis: [
+      'Outer catch in checkSecurityPatterns — one or more sub-checks failed',
+      'Threshold, brute force, takeover, or suspicious pattern checks may be affected',
+      'Check individual check functions for specific failure',
+      'Alerts may have been missed — review event manually',
+    ],
+  },
+  SECMON_301: {
+    code: 'SECMON_301',
+    file: 'alert-detection.ts',
+    function: 'checkForBruteForce',
+    httpStatus: null,
+    severity: 'warn' as const,
+    recoverable: true,
+    description: 'Brute force detection failed — could not count failed logins.',
+    diagnosis: [
+      'countSecurityEventsInWindow threw for AUTH_LOGIN_FAILED events',
+      'Database may be unavailable',
+      'Brute force attacks may go undetected until DB connectivity is restored',
+    ],
+  },
+  SECMON_302: {
+    code: 'SECMON_302',
+    file: 'alert-detection.ts',
+    function: 'checkForAccountTakeover',
+    httpStatus: null,
+    severity: 'error' as const,
+    recoverable: true,
+    description: 'Account takeover detection failed — could not query login history.',
+    diagnosis: [
+      'Database query for password change or login history threw',
+      'Compares post-password-change IPs to 30-day known IPs',
+      'Takeover may go undetected until DB connectivity is restored',
+    ],
+  },
+  SECMON_303: {
+    code: 'SECMON_303',
+    file: 'alert-detection.ts',
+    function: 'checkForSuspiciousPatterns',
+    httpStatus: null,
+    severity: 'error' as const,
+    recoverable: true,
+    description: 'Suspicious pattern analysis failed.',
+    diagnosis: [
+      'Error in privilege escalation detection (PERMISSION_DENIED count)',
+      'Or error in data exfiltration detection (SENSITIVE_DATA_EXPORTED count)',
+      'Check countSecurityEventsInWindow for the specific event type',
+    ],
+  },
+  SECMON_304: {
+    code: 'SECMON_304',
+    file: 'alert-detection.ts',
+    function: 'checkThresholdAlerts',
+    httpStatus: null,
+    severity: 'warn' as const,
+    recoverable: true,
+    description: 'Threshold-based alert check failed for one or more thresholds.',
+    diagnosis: [
+      'Error counting events or creating alert for a configured threshold',
+      'Check ALERT_THRESHOLDS configuration',
+      'Some thresholds may have been evaluated while others failed',
+    ],
+  },
+  // 400-406: Integrity Layer
+  SECMON_400: {
+    code: 'SECMON_400',
+    file: 'integrity/event-hash.ts',
+    function: 'computeEventHash',
+    httpStatus: 500,
+    severity: 'error' as const,
+    recoverable: true,
+    description: 'Failed to compute event content hash.',
+    diagnosis: [
+      'JSON.stringify or SHA-256 hashing threw',
+      'Event content may contain circular references',
+      'Check event data structure',
+    ],
+  },
+  SECMON_401: {
+    code: 'SECMON_401',
+    file: 'integrity/event-hash.ts',
+    function: 'verifyEventChain',
+    httpStatus: null,
+    severity: 'error' as const,
+    recoverable: false,
+    description: 'Event hash chain verification failed — integrity compromised.',
+    diagnosis: [
+      'An event in the chain has been modified after creation',
+      'Chain linkage is broken (prevHash mismatch)',
+      'Check brokenAt index for the first tampered event',
+    ],
+  },
+  SECMON_402: {
+    code: 'SECMON_402',
+    file: 'integrity/chain-state.ts',
+    function: 'getLastHash',
+    httpStatus: 500,
+    severity: 'warn' as const,
+    recoverable: true,
+    description: 'Failed to retrieve last integrity hash from database.',
+    diagnosis: [
+      'Database query failed for recent security events',
+      'No events with integrity metadata exist (chain genesis)',
+      'New events will start a new chain segment',
+    ],
+  },
+  SECMON_403: {
+    code: 'SECMON_403',
+    file: 'integrity/verification.ts',
+    function: 'verifyContentIntegrity',
+    httpStatus: null,
+    severity: 'error' as const,
+    recoverable: false,
+    description: 'Content integrity verification failed — hash mismatch.',
+    diagnosis: [
+      'Content has been modified after hashing',
+      'Possible data tampering',
+      'Compare actualHash with expectedHash',
+    ],
+  },
+  SECMON_404: {
+    code: 'SECMON_404',
+    file: 'integrity/verification.ts',
+    function: 'verifyHashChain',
+    httpStatus: null,
+    severity: 'error' as const,
+    recoverable: false,
+    description: 'Generic hash chain verification failed.',
+    diagnosis: [
+      'Works for events, ledger entries, artifacts',
+      'Check brokenAt index and entryId for the failure point',
+      'Verify entries are ordered chronologically',
+    ],
+  },
+  SECMON_405: {
+    code: 'SECMON_405',
+    file: 'integrity/chain-state.ts',
+    function: 'buildIntegrityMetadata',
+    httpStatus: null,
+    severity: 'warn' as const,
+    recoverable: true,
+    description: 'Failed to build integrity metadata for event.',
+    diagnosis: [
+      'Hash computation error during event logging',
+      'Event is still logged — integrity is best-effort',
+      'Check event input data for unusual content',
+    ],
+  },
+  SECMON_406: {
+    code: 'SECMON_406',
+    file: 'event-logger.ts',
+    function: 'logSecurityEvent',
+    httpStatus: null,
+    severity: 'warn' as const,
+    recoverable: true,
+    description: 'Integrity hash computation failed during event logging.',
+    diagnosis: [
+      'integrityEnabled is true but hash computation threw',
+      'Event is still logged without integrity metadata',
+      'Integrity chain may have a gap',
+    ],
+  },
+
+  // 410-418: Trust & Policy
+  SECMON_410: {
+    code: 'SECMON_410',
+    file: 'trust/trust-evaluator.ts',
+    function: 'evaluateTrust',
+    httpStatus: null,
+    severity: 'warn' as const,
+    recoverable: true,
+    description: 'Trust evaluation failed.',
+    diagnosis: [
+      'Invalid trust input provided',
+      'Check signature, DMARC, nonce, TTL, and issuer fields',
+      'Returns tier 0 on failure — safe default',
+    ],
+  },
+  SECMON_411: {
+    code: 'SECMON_411',
+    file: 'policy/policy-engine.ts',
+    function: 'evaluatePolicy',
+    httpStatus: null,
+    severity: 'error' as const,
+    recoverable: true,
+    description: 'Policy evaluation threw an error.',
+    diagnosis: [
+      'Invalid policy conditions or context structure',
+      'Check field paths in policy conditions',
+      'Verify policy array is well-formed',
+    ],
+  },
+  SECMON_412: {
+    code: 'SECMON_412',
+    file: 'policy/security-intents.ts',
+    function: 'resolveIntent',
+    httpStatus: 500,
+    severity: 'error' as const,
+    recoverable: true,
+    description: 'Security intent resolution failed.',
+    diagnosis: [
+      'Intent handler threw an error',
+      'Check intent type and context parameters',
+      'Database may be unavailable for QUARANTINE_EVENT',
+    ],
+  },
+  SECMON_413: {
+    code: 'SECMON_413',
+    file: 'policy/playbooks.ts',
+    function: 'getPlaybookForAlert',
+    httpStatus: null,
+    severity: 'info' as const,
+    recoverable: true,
+    description: 'No playbook found for alert type.',
+    diagnosis: [
+      'Alert type does not match any trigger in SECURITY_PLAYBOOKS',
+      'Custom alert types need custom playbook entries',
+      'Returns null — caller should handle gracefully',
+    ],
+  },
+  SECMON_414: {
+    code: 'SECMON_414',
+    file: 'principal-context.ts',
+    function: 'validatePrincipal',
+    httpStatus: 400,
+    severity: 'warn' as const,
+    recoverable: false,
+    description: 'Invalid PrincipalContext — validation failed.',
+    diagnosis: [
+      'Missing principalId or invalid principalType',
+      'authMethod or trustTier has invalid value',
+      'Build via buildPrincipalContext() to get validation',
+    ],
+  },
+  SECMON_415: {
+    code: 'SECMON_415',
+    file: 'policy/severity-rules.ts',
+    function: 'getSeverityAction',
+    httpStatus: null,
+    severity: 'info' as const,
+    recoverable: true,
+    description: 'Unknown risk level passed to severity rules.',
+    diagnosis: [
+      'Risk level does not match LOW/MEDIUM/HIGH/CRITICAL',
+      'Falls back to "log" action',
+    ],
+  },
+  SECMON_416: {
+    code: 'SECMON_416',
+    file: 'posture/security-posture.ts',
+    function: 'getSecurityPosture',
+    httpStatus: 500,
+    severity: 'error' as const,
+    recoverable: true,
+    description: 'Failed to compute security posture.',
+    diagnosis: [
+      'Error fetching active alerts or computing risk score',
+      'Database may be unavailable',
+      'Returns partial posture with available data',
+    ],
+  },
+  SECMON_417: {
+    code: 'SECMON_417',
+    file: 'alert-recovery.ts',
+    function: 'buildAlertRecovery',
+    httpStatus: null,
+    severity: 'info' as const,
+    recoverable: true,
+    description: 'No matching recovery template for alert type.',
+    diagnosis: [
+      'Using default recovery template',
+      'Custom alert types should add entries to ALERT_RECOVERY_MAP',
+    ],
+  },
+  SECMON_418: {
+    code: 'SECMON_418',
+    file: 'posture/security-summary.ts',
+    function: 'summarizePosture',
+    httpStatus: null,
+    severity: 'info' as const,
+    recoverable: true,
+    description: 'Failed to generate security summary.',
+    diagnosis: [
+      'Posture object may have unexpected structure',
+      'Returns empty string on failure',
+    ],
+  },
+
+  // 420-426: Enforcement
+  SECMON_420: {
+    code: 'SECMON_420',
+    file: 'enforcement/action-gate.ts',
+    function: 'shouldBlockAction',
+    httpStatus: null,
+    severity: 'error' as const,
+    recoverable: true,
+    description: 'Action gate evaluation failed.',
+    diagnosis: [
+      'Error in blacklist, nonce, threshold, or policy check',
+      'Fails open (does not block) on internal errors',
+      'Check individual gate components',
+    ],
+  },
+  SECMON_421: {
+    code: 'SECMON_421',
+    file: 'enforcement/blacklist.ts',
+    function: 'isBlacklisted',
+    httpStatus: null,
+    severity: 'warn' as const,
+    recoverable: true,
+    description: 'Blacklist check failed.',
+    diagnosis: [
+      'Error in composite blacklist evaluation',
+      'Check IP, principal, and org blacklist states',
+    ],
+  },
+  SECMON_422: {
+    code: 'SECMON_422',
+    file: 'enforcement/action-gate.ts',
+    function: 'shouldBlockAction',
+    httpStatus: 429,
+    severity: 'warn' as const,
+    recoverable: true,
+    description: 'Action throttled due to high event rate.',
+    diagnosis: [
+      'Principal exceeded event threshold in 5-min window',
+      'Exponential backoff applied',
+      'Reduce request frequency or batch operations',
+    ],
+  },
+  SECMON_423: {
+    code: 'SECMON_423',
+    file: 'enforcement/action-gate.ts',
+    function: 'shouldBlockAction',
+    httpStatus: 403,
+    severity: 'warn' as const,
+    recoverable: false,
+    description: 'Action blocked by security policy.',
+    diagnosis: [
+      'A deny policy matched the action context',
+      'Check policy conditions and action classification',
+      'Contact administrator to update policy if needed',
+    ],
+  },
+  SECMON_424: {
+    code: 'SECMON_424',
+    file: 'enforcement/action-gate.ts',
+    function: 'shouldBlockAction',
+    httpStatus: 403,
+    severity: 'error' as const,
+    recoverable: false,
+    description: 'Action blocked by blacklist.',
+    diagnosis: [
+      'IP, principal, or org is on the blacklist',
+      'Wait for blacklist expiry or contact administrator',
+      'Check which dimension triggered the block',
+    ],
+  },
+  SECMON_425: {
+    code: 'SECMON_425',
+    file: 'replay/nonce-store.ts',
+    function: 'checkAndSet',
+    httpStatus: null,
+    severity: 'warn' as const,
+    recoverable: false,
+    description: 'Nonce replay detected — duplicate nonce rejected.',
+    diagnosis: [
+      'The nonce has been seen before within the TTL window',
+      'Possible replay attack or duplicate request',
+      'Generate a new unique nonce for each request',
+    ],
+  },
+  SECMON_426: {
+    code: 'SECMON_426',
+    file: 'replay/nonce-store.ts',
+    function: 'checkAndSet',
+    httpStatus: null,
+    severity: 'warn' as const,
+    recoverable: false,
+    description: 'Nonce expired — request arrived after expiry window.',
+    diagnosis: [
+      'The nonce expiresAt time has passed',
+      'Request was delayed or the nonce was too old',
+      'Generate a new nonce with appropriate TTL',
+    ],
+  },
+
+  // 430-432: Replay / Cross-cutting
+  SECMON_430: {
+    code: 'SECMON_430',
+    file: 'replay/nonce-store.ts',
+    function: 'InMemoryNonceStore',
+    httpStatus: null,
+    severity: 'info' as const,
+    recoverable: true,
+    description: 'Nonce store evicted entries due to capacity limit.',
+    diagnosis: [
+      'Store reached maxSize and evicted oldest entry',
+      'This is normal behavior — not an error',
+      'Increase maxSize if legitimate nonces are being evicted',
+    ],
+  },
+  SECMON_431: {
+    code: 'SECMON_431',
+    file: 'enforcement/action-gate.ts',
+    function: 'shouldBlockAction',
+    httpStatus: 403,
+    severity: 'error' as const,
+    recoverable: false,
+    description: 'Action blocked by nonce replay detection.',
+    diagnosis: [
+      'Request contained a previously-used nonce',
+      'Possible replay attack',
+      'Generate a new unique nonce and retry',
+    ],
+  },
+  SECMON_432: {
+    code: 'SECMON_432',
+    file: 'posture/security-posture.ts',
+    function: 'getSecurityPosture',
+    httpStatus: null,
+    severity: 'warn' as const,
+    recoverable: true,
+    description: 'Failed to fetch active alerts for security posture.',
+    diagnosis: [
+      'Database query for active alerts failed',
+      'Posture returned with empty alerts array',
+      'Risk score may be understated',
+    ],
+  },
+} as const;

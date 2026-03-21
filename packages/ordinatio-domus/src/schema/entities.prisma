@@ -1,0 +1,247 @@
+// ===========================================
+// ORDINATIO ENTITIES — Schema Fragment
+// ===========================================
+// 12 models, 1 enum. Standalone — cross-domain
+// FKs (clientId, authorId, tagId, linkedEmails)
+// become plain String? with no FK constraint.
+// The consuming app handles those relations.
+// ===========================================
+
+// --- Enums ---
+
+enum ContactSource {
+  EMAIL_SYNC
+  MANUAL
+  AUTOMATION
+  IMPORT
+}
+
+// --- Contact ---
+
+model Contact {
+  id                  String          @id @default(cuid())
+  name                String?
+  email               String          @unique
+  notes               String?         @db.Text
+  source              ContactSource   @default(EMAIL_SYNC)
+  tags                ContactTag[]
+  convertedToClientId String?         @unique
+  convertedAt         DateTime?
+  convertedBy         String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  @@index([email])
+  @@index([source])
+  @@index([createdAt])
+}
+
+model ContactTag {
+  id        String   @id @default(cuid())
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tagId     String   // Plain string — Tag model defined by consuming app
+  addedAt   DateTime @default(now())
+  addedBy   String?
+
+  @@unique([contactId, tagId])
+  @@index([contactId])
+  @@index([tagId])
+}
+
+// --- Notes (entity-agnostic) ---
+
+model Note {
+  id          String           @id @default(cuid())
+  entityType  String           @db.VarChar(50)  // "client", "contact", "order"
+  entityId    String
+  content     String           @db.Text
+  contentHtml String?          @db.Text
+  isDraft     Boolean          @default(false)
+  authorId    String?          // Plain string — User model defined by consuming app
+  source      String           @default("MANUAL")
+  attachments NoteAttachment[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model NoteAttachment {
+  id          String   @id @default(cuid())
+  noteId      String
+  note        Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  filename    String
+  mimeType    String
+  size        Int
+  storagePath String
+  createdAt   DateTime @default(now())
+
+  @@index([noteId])
+}
+
+// --- Entity Knowledge ---
+
+model EntityFieldDefinition {
+  id              String   @id @default(cuid())
+  entityType      String   @db.VarChar(50)
+  key             String   @db.VarChar(100)
+  label           String   @db.VarChar(200)
+  dataType        String   @db.VarChar(20)
+  category        String   @db.VarChar(100)
+  enumOptions     Json?
+  extractionHint  String?  @db.Text
+  status          String   @default("approved") @db.VarChar(20)
+  mergedIntoId    String?
+  suggestedFrom   String?  @db.Text
+  occurrenceCount Int      @default(0)
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  halfLifeDays    Int?
+  constraints     Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  ledgerEntries   KnowledgeLedgerEntry[]
+
+  @@unique([entityType, key])
+  @@index([entityType, status])
+  @@index([entityType, category])
+}
+
+model KnowledgeLedgerEntry {
+  id              String    @id @default(cuid())
+  fieldId         String
+  field           EntityFieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  entityType      String    @db.VarChar(50)
+  entityId        String
+  value           Json
+  confidence      Decimal   @default(1.0) @db.Decimal(3, 2)
+  source          String    @db.VarChar(30)
+  sourceId        String?
+  setBy           String?
+  supersededAt    DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([entityType, entityId])
+  @@index([fieldId, entityId, createdAt])
+  @@index([supersededAt])
+}
+
+model SearchQueryLog {
+  id              String    @id @default(cuid())
+  query           String    @db.Text
+  source          String    @db.VarChar(30)
+  userId          String?
+  entityType      String?   @db.VarChar(50)
+  resultCount     Int?
+  hourOfDay       Int?
+  dayOfWeek       Int?
+  monthOfYear     Int?
+  weekOfYear      Int?
+  processedAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([processedAt, createdAt])
+  @@index([source])
+  @@index([hourOfDay, dayOfWeek])
+  @@index([monthOfYear])
+}
+
+model SearchPattern {
+  id              String    @id @default(cuid())
+  pattern         String    @db.VarChar(200)
+  entityType      String?   @db.VarChar(50)
+  totalCount      Int       @default(0)
+  byHour          Json?
+  byDayOfWeek     Json?
+  byMonth         Json?
+  peakHours       Json?
+  peakDays        Json?
+  peakMonths      Json?
+  lastSeenAt      DateTime
+  fieldId         String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([pattern, entityType])
+  @@index([totalCount])
+  @@index([entityType])
+}
+
+// --- Agent Intelligence ---
+
+model AgentInteraction {
+  id          String    @id @default(cuid())
+  userId      String
+  query       String    @db.Text
+  intent      String?
+  topic       String?
+  modules     String[]
+  toolsUsed   String[]
+  satisfied   Boolean?
+  sessionId   String?
+  createdAt   DateTime  @default(now())
+
+  @@index([topic])
+  @@index([createdAt])
+  @@index([userId])
+}
+
+model AgentSuggestion {
+  id              String    @id @default(cuid())
+  name            String
+  description     String    @db.Text
+  evidence        String    @db.Text
+  category        String
+  confidence      Float
+  status          String    @default("pending")
+  suggestedTools  String[]
+  queryCount      Int
+  dismissedBy     String?
+  dismissedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model AgentKnowledge {
+  id        String   @id @default(cuid())
+  entity    String   @db.VarChar(50)
+  field     String   @db.VarChar(100)
+  value     String
+  label     String
+  aliases   String[]
+  category  String?  @db.VarChar(100)
+  metadata  Json?
+  sortOrder Int      @default(0)
+  source    String   @default("seed") @db.VarChar(30)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([entity, field, value])
+  @@index([entity, field])
+  @@index([entity, category])
+  @@index([source])
+}
+
+model AgentPreference {
+  id         String   @id @default(cuid())
+  entity     String   @db.VarChar(50)
+  field      String   @db.VarChar(100)
+  value      String
+  label      String
+  conditions Json?
+  userId     String?
+  priority   Int      @default(0)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([entity, userId])
+  @@index([entity, field])
+}

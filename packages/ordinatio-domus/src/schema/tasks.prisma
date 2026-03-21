@@ -1,0 +1,211 @@
+// ===========================================
+// ORDINATIO TASKS — Schema Fragment
+// ===========================================
+// 7 models, 4 enums. Standalone — cross-domain
+// FKs (emailId, assignedToId) become plain
+// String? with no FK constraint. The consuming
+// app handles those relations.
+// ===========================================
+
+// --- Enums ---
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  BLOCKED
+  COMPLETED
+}
+
+enum TaskPriority {
+  URGENT
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum DependencyType {
+  FINISH_START
+  START_START
+  FINISH_FINISH
+  SOFT
+}
+
+enum IntentStatus {
+  PROPOSED
+  ACTIVE
+  IN_PROGRESS
+  BLOCKED
+  SATISFIED
+  FAILED
+}
+
+// --- Models ---
+
+model Task {
+  id              String       @id @default(cuid())
+
+  // Entity linking (generic — any entity type)
+  entityType      String?      @db.VarChar(50)
+  entityId        String?
+
+  // Backward compat: optional email link (plain string, no FK)
+  emailId         String?
+
+  // Content
+  title           String
+  description     String?      @db.Text
+  notes           String?      @db.Text
+  successCriteria String?      @db.Text
+
+  // Priority & categorization
+  priority        TaskPriority @default(MEDIUM)
+  categoryId      String?
+  category        TaskCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  // Assignment (plain string — no FK to external User model)
+  assignedToId    String?
+  watchers        String[]
+
+  // Status & completion
+  status          TaskStatus   @default(OPEN)
+  completedAt     DateTime?
+  completedBy     String?
+
+  // Blocker (when BLOCKED)
+  blockerReason   String?      @db.Text
+  blockerType     String?      @db.VarChar(50)
+  blockerOwnerId  String?
+
+  // Scheduling
+  dueDate         DateTime?
+
+  // Agent context
+  agentRole       String?      @db.VarChar(50)
+  context         Json?
+
+  // Subtask hierarchy
+  parentTaskId    String?
+  parentTask      Task?        @relation("TaskSubtasks", fields: [parentTaskId], references: [id], onDelete: SetNull)
+  subtasks        Task[]       @relation("TaskSubtasks")
+
+  // Dependencies
+  dependsOn       TaskDependency[] @relation("DependentTask")
+  dependedOnBy    TaskDependency[] @relation("DependencyTask")
+
+  // Intent & template
+  intentId        String?
+  intent          TaskIntent?  @relation(fields: [intentId], references: [id], onDelete: SetNull)
+  templateId      String?
+  template        TaskTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  // Tags & outcome
+  tags            String[]
+  outcome         String?      @db.Text
+  outcomeData     Json?
+
+  // Audit
+  createdBy       String
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  history         TaskHistoryEntry[]
+
+  @@map("EmailTask")
+  @@index([status])
+  @@index([assignedToId])
+  @@index([entityType, entityId])
+  @@index([dueDate])
+}
+
+model TaskDependency {
+  id               String         @id @default(cuid())
+  dependentTaskId  String
+  dependentTask    Task           @relation("DependentTask", fields: [dependentTaskId], references: [id], onDelete: Cascade)
+  dependencyTaskId String
+  dependencyTask   Task           @relation("DependencyTask", fields: [dependencyTaskId], references: [id], onDelete: Cascade)
+  type             DependencyType @default(FINISH_START)
+  createdAt        DateTime       @default(now())
+
+  @@unique([dependentTaskId, dependencyTaskId])
+}
+
+model TaskHistoryEntry {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  action    String   @db.VarChar(50)
+  field     String?  @db.VarChar(100)
+  oldValue  String?  @db.Text
+  newValue  String?  @db.Text
+  userId    String?
+  createdAt DateTime @default(now())
+
+  @@index([taskId])
+}
+
+model TaskTemplate {
+  id                String   @id @default(cuid())
+  name              String   @unique
+  description       String?  @db.Text
+  category          String?  @db.VarChar(100)
+  definition        Json
+  triggerEntityType String?  @db.VarChar(50)
+  triggerEnabled    Boolean  @default(false)
+  createdBy         String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tasks             Task[]
+  intents           TaskIntent[]
+}
+
+model TaskIntent {
+  id                String       @id @default(cuid())
+  title             String
+  description       String?      @db.Text
+  successCriteria   Json
+  acceptableMethods String[]     @default([])
+  entityType        String?      @db.VarChar(50)
+  entityId          String?
+  status            IntentStatus @default(PROPOSED)
+  satisfiedAt       DateTime?
+  satisfiedBy       String?
+  failedAt          DateTime?
+  failureReason     String?      @db.Text
+  verificationData  Json?
+  agentRole         String?      @db.VarChar(50)
+  context           Json?
+  templateId        String?
+  template          TaskTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  createdBy         String
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  tasks             Task[]
+  dependsOn         IntentDependency[] @relation("DependentIntent")
+  dependedOnBy      IntentDependency[] @relation("RequiredIntent")
+
+  @@index([status])
+  @@index([entityType, entityId])
+}
+
+model IntentDependency {
+  id                String     @id @default(cuid())
+  dependentIntentId String
+  dependentIntent   TaskIntent @relation("DependentIntent", fields: [dependentIntentId], references: [id], onDelete: Cascade)
+  requiredIntentId  String
+  requiredIntent    TaskIntent @relation("RequiredIntent", fields: [requiredIntentId], references: [id], onDelete: Cascade)
+  createdAt         DateTime   @default(now())
+
+  @@unique([dependentIntentId, requiredIntentId])
+}
+
+model TaskCategory {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  color     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tasks     Task[]
+}

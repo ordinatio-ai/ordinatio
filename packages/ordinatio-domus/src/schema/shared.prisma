@@ -1,0 +1,14 @@
+// ===========================================
+// ORDINATIO DOMUS — Shared Schema Config
+// ===========================================
+// Datasource + generator. Required by all modules.
+// ===========================================
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}

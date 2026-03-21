@@ -1,0 +1,52 @@
+{
+  "name": "@ordinatio/agent",
+  "version": "1.0.3",
+  "private": false,
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "import": "./dist/index.js",
+        "types": "./dist/index.d.ts"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --clean --external @anthropic-ai/sdk --external openai --external @google/generative-ai",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "peerDependencies": {
+    "@ordinatio/jobs": ">=1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@ordinatio/jobs": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@ordinatio/core": "^1.0.0",
+    "@ordinatio/jobs": "^1.0.0",
+    "vitest": "^4.0.0"
+  }
+}

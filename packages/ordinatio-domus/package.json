@@ -1,0 +1,98 @@
+{
+  "name": "@ordinatio/domus",
+  "version": "1.0.9",
+  "private": false,
+  "license": "MIT",
+  "description": "The Ordinatio home unit \u2014 orchestrates email, tasks, and more",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "ordinatio": "./bin/cli.js"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --clean --external @ordinatio/email --external @ordinatio/tasks --external @ordinatio/entities --external @ordinatio/auth --external @ordinatio/activities --external @ordinatio/settings --external @ordinatio/security --external @ordinatio/jobs --external @ordinatio/agent --external @prisma/client",
+    "postinstall": "node bin/postinstall.js",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "dependencies": {
+    "@prisma/client": "^7.3.0",
+    "prisma": "^7.3.0"
+  },
+  "peerDependencies": {
+    "@ordinatio/email": "^1.0.0",
+    "@ordinatio/tasks": "^1.0.0",
+    "@ordinatio/entities": "^1.0.0",
+    "@ordinatio/settings": "^1.0.0",
+    "@ordinatio/activities": "^1.0.0",
+    "@ordinatio/security": "^1.0.0",
+    "@ordinatio/jobs": "^1.0.0",
+    "@ordinatio/agent": "^1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@ordinatio/email": {
+      "optional": true
+    },
+    "@ordinatio/tasks": {
+      "optional": true
+    },
+    "@ordinatio/entities": {
+      "optional": true
+    },
+    "@ordinatio/settings": {
+      "optional": true
+    },
+    "@ordinatio/activities": {
+      "optional": true
+    },
+    "@ordinatio/security": {
+      "optional": true
+    },
+    "@ordinatio/jobs": {
+      "optional": true
+    },
+    "@ordinatio/agent": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@ordinatio/core": "^1.0.0",
+    "@ordinatio/email": "^1.0.0",
+    "@ordinatio/tasks": "^1.0.0",
+    "@ordinatio/entities": "^1.0.0",
+    "@ordinatio/settings": "^1.0.0",
+    "@ordinatio/activities": "^1.0.0",
+    "@ordinatio/security": "^1.0.0",
+    "@ordinatio/jobs": "^1.0.0",
+    "@ordinatio/agent": "^1.0.0",
+    "typescript": "5",
+    "vitest": "4.0.18"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "import": "./dist/index.js",
+        "types": "./dist/index.d.ts"
+      }
+    }
+  }
+}

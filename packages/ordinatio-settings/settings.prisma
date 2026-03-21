@@ -1,0 +1,79 @@
+// ===========================================
+// ORDINATIO SETTINGS — Prisma Schema Fragment
+// ===========================================
+// Standalone schema for the settings module.
+// In System 1701, these models are part of the
+// main schema.prisma. For standalone @ordinatio/domus
+// usage, this fragment is merged by the schema merger.
+// ===========================================
+
+model SystemSettings {
+  key         String    @id
+  value       String    @db.Text
+  description String?
+  updatedAt   DateTime  @updatedAt
+}
+
+model UserPreference {
+  id          String      @id @default(cuid())
+  userId      String      @unique
+
+  // Email reply layout preference
+  replyLayout ReplyLayout @default(MODAL)
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+enum ReplyLayout {
+  MODAL             // Traditional modal dialog
+  SPLIT_HORIZONTAL  // Email on top, reply on bottom
+  SPLIT_VERTICAL    // Email on left, reply on right
+  POPOUT            // Opens reply in new window
+}
+
+model SettingHistory {
+  id            String    @id @default(cuid())
+  key           String
+  oldValue      String?   @db.Text
+  newValue      String    @db.Text
+  source        String    @db.VarChar(30)
+  changedBy     String?
+  contentHash   String
+  stateHash     String?
+  supersededAt  DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([key, createdAt])
+  @@index([supersededAt])
+}
+
+model SettingProposal {
+  id                String    @id @default(cuid())
+  key               String
+  oldValue          String?   @db.Text
+  newValue          String    @db.Text
+  reason            String    @db.Text
+  requiredApprovals Int       @default(2)
+  status            String    @default("PROPOSED")  // PROPOSED|APPROVED|REJECTED|APPLIED|EXPIRED
+  expiresAt         DateTime
+  createdBy         String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  approvals         SettingApproval[]
+
+  @@index([key, status])
+  @@index([status, expiresAt])
+}
+
+model SettingApproval {
+  id           String   @id @default(cuid())
+  proposalId   String
+  proposal     SettingProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  approverId   String
+  approverType String   @db.VarChar(10)
+  signature    String?
+  createdAt    DateTime @default(now())
+
+  @@unique([proposalId, approverId])
+}

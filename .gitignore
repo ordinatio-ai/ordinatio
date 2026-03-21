@@ -1,0 +1,5 @@
+node_modules/
+dist/
+pugil-reports/
+*.tgz
+.DS_Store

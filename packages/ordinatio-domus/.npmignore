@@ -1,0 +1,8 @@
+src/
+*.test.ts
+pugil-reporter.ts
+pugil.config.ts
+pugil-reports/
+vitest.config.ts
+tsconfig.json
+.gitignore

@@ -111,6 +111,16 @@ export interface IntentValidation {
 export function validateIntent(intent: AutomationIntent): IntentValidation {
   const errors: string[] = [];
 
+  validateIntentProperties(intent, errors);
+  validateDefinitionOfDone(intent.definitionOfDone, errors);
+
+  validateFailureBoundary(intent.failureBoundary, errors);
+  validateEscalationPolicy(intent.humanEscalationPolicy, errors);
+
+  return { valid: errors.length === 0, errors };
+}
+
+function validateIntentProperties(intent: AutomationIntent, errors: string[]): void {
   if (!intent.intent || intent.intent.trim().length === 0) {
     errors.push('Intent description is empty');
   }
@@ -119,8 +129,22 @@ export function validateIntent(intent: AutomationIntent): IntentValidation {
     errors.push('Definition of done has no checks — cannot verify success');
   }
 
-  for (let i = 0; i < (intent.definitionOfDone?.length ?? 0); i++) {
-    const check = intent.definitionOfDone[i];
+  if (!intent.acceptablePaths || intent.acceptablePaths.length === 0) {
+    errors.push('No acceptable paths defined — automation has no guardrails');
+  }
+
+  if (!intent.failureBoundary) {
+    errors.push('No failure boundary — automation has no stop conditions');
+  }
+
+  if (!intent.humanEscalationPolicy) {
+    errors.push('No human escalation policy — failures have no escalation path');
+  }
+}
+
+function validateDefinitionOfDone(definitionOfDone: DoDCheck[], errors: string[]): void {
+  for (let i = 0; i < (definitionOfDone?.length ?? 0); i++) {
+    const check = definitionOfDone[i];
     if (!check.description) {
       errors.push(`DoD check ${i} has no description`);
     }
@@ -128,24 +152,18 @@ export function validateIntent(intent: AutomationIntent): IntentValidation {
       errors.push(`DoD check ${i} has no verification method`);
     }
   }
+}
 
-  if (!intent.acceptablePaths || intent.acceptablePaths.length === 0) {
-    errors.push('No acceptable paths defined — automation has no guardrails');
-  }
-
-  if (!intent.failureBoundary) {
-    errors.push('No failure boundary — automation has no stop conditions');
-  } else if (intent.failureBoundary.maxConsecutiveFailures <= 0) {
+function validateFailureBoundary(failureBoundary: FailureBoundary, errors: string[]): void {
+  if (failureBoundary.maxConsecutiveFailures <= 0) {
     errors.push('maxConsecutiveFailures must be > 0');
   }
+}
 
-  if (!intent.humanEscalationPolicy) {
-    errors.push('No human escalation policy — failures have no escalation path');
-  } else if (!intent.humanEscalationPolicy.escalateOn?.length) {
+function validateEscalationPolicy(humanEscalationPolicy: EscalationPolicy, errors: string[]): void {
+  if (!humanEscalationPolicy.escalateOn?.length) {
     errors.push('Escalation policy has no triggers — will never escalate');
   }
-
-  return { valid: errors.length === 0, errors };
 }
 
 // ---- DoD Evaluation ----
@@ -175,56 +193,7 @@ export function evaluateDefinitionOfDone(
   context: Record<string, unknown>,
   checker?: DoDChecker,
 ): DoDResult {
-  const results: DoDResult['checks'] = [];
-
-  for (const check of checks) {
-    let passed = false;
-    let reason: string | undefined;
-
-    switch (check.verification.type) {
-      case 'field_check': {
-        const actual = getNestedValue(context, check.verification.field);
-        passed = evaluateFieldCheck(actual, check.verification.comparator, check.verification.value);
-        if (!passed) {
-          reason = `Field "${check.verification.field}" is "${String(actual)}", expected ${check.verification.comparator} "${check.verification.value}"`;
-        }
-        break;
-      }
-
-      case 'record_exists': {
-        if (checker?.recordExists) {
-          passed = checker.recordExists(check.verification.table, check.verification.where);
-        } else {
-          reason = 'No record_exists checker provided';
-        }
-        break;
-      }
-
-      case 'count_check': {
-        if (checker?.countCheck) {
-          const count = checker.countCheck(check.verification.table, check.verification.where);
-          passed = evaluateCountCheck(count, check.verification.comparator, check.verification.value);
-          if (!passed) {
-            reason = `Count is ${count}, expected ${check.verification.comparator} ${check.verification.value}`;
-          }
-        } else {
-          reason = 'No count_check checker provided';
-        }
-        break;
-      }
-
-      case 'custom': {
-        if (checker?.custom) {
-          passed = checker.custom(check.verification.checkId, check.verification.params);
-        } else {
-          reason = 'No custom checker provided';
-        }
-        break;
-      }
-    }
-
-    results.push({ description: check.description, passed, reason });
-  }
+  const results = checks.map(check => evaluateCheck(check, context, checker));
 
   const satisfiedCount = results.filter(r => r.passed).length;
 
@@ -234,6 +203,51 @@ export function evaluateDefinitionOfDone(
     satisfiedCount,
     totalChecks: results.length,
   };
+}
+
+function evaluateCheck(check: DoDCheck, context: Record<string, unknown>, checker?: DoDChecker): { description: string, passed: boolean, reason?: string } {
+  let passed = false;
+  let reason: string | undefined;
+
+  switch (check.verification.type) {
+    case 'field_check':
+      passed = evaluateFieldCheck(
+        getNestedValue(context, check.verification.field),
+        check.verification.comparator,
+        check.verification.value
+      );
+
+      if (!passed) {
+        reason = `Field "${check.verification.field}" is "${String(getNestedValue(context, check.verification.field))}", expected ${check.verification.comparator} "${check.verification.value}"`;
+      }
+      break;
+    case 'record_exists':
+      if (checker?.recordExists) {
+        passed = checker.recordExists(check.verification.table, check.verification.where);
+      } else {
+        reason = 'No record_exists checker provided';
+      }
+      break;
+    case 'count_check':
+      if (checker?.countCheck) {
+        const count = checker.countCheck(check.verification.table, check.verification.where);
+        passed = evaluateCountCheck(count, check.verification.comparator, check.verification.value);
+        if (!passed) {
+          reason = `Count is ${count}, expected ${check.verification.comparator} ${check.verification.value}`;
+        }
+      } else {
+        reason = 'No count_check checker provided';
+      }
+      break;
+    case 'custom':
+      if (checker?.custom) {
+        passed = checker.custom(check.verification.checkId, check.verification.params);
+      } else {
+        reason = 'No custom checker provided';
+      }
+      break;
+  }
+  return { description: check.description, passed, reason };
 }
 
 /**
@@ -264,16 +278,9 @@ export function checkFailureBoundary(
   recentFailures?: { count: number; windowMs: number },
   lastError?: string,
 ): FailureBoundaryCheck {
-  // Check fatal patterns first
-  if (lastError && boundary.fatalPatterns) {
-    for (const pattern of boundary.fatalPatterns) {
-      if (new RegExp(pattern, 'i').test(lastError)) {
-        return { breached: true, reason: `Fatal error pattern matched: ${pattern}`, isFatal: true };
-      }
-    }
-  }
+  const breachDetails = checkFatalPatterns(boundary, lastError);
+  if (breachDetails) return breachDetails;
 
-  // Check consecutive failures
   if (consecutiveFailures >= boundary.maxConsecutiveFailures) {
     return {
       breached: true,
@@ -281,17 +288,25 @@ export function checkFailureBoundary(
     };
   }
 
-  // Check windowed failures
-  if (boundary.maxFailuresPerWindow && recentFailures) {
-    if (recentFailures.count >= boundary.maxFailuresPerWindow.count) {
-      return {
-        breached: true,
-        reason: `${recentFailures.count} failures in ${boundary.maxFailuresPerWindow.windowMs}ms window (max: ${boundary.maxFailuresPerWindow.count})`,
-      };
-    }
+  if (boundary.maxFailuresPerWindow && recentFailures && (recentFailures.count >= boundary.maxFailuresPerWindow.count)) {
+    return {
+      breached: true,
+      reason: `${recentFailures.count} failures in ${boundary.maxFailuresPerWindow.windowMs}ms window (max: ${boundary.maxFailuresPerWindow.count})`,
+    };
   }
 
   return { breached: false };
+}
+
+function checkFatalPatterns(boundary: FailureBoundary, lastError?: string): FailureBoundaryCheck | null {
+  if (lastError && boundary.fatalPatterns) {
+    for (const pattern of boundary.fatalPatterns) {
+      if (new RegExp(pattern, 'i').test(lastError)) {
+        return { breached: true, reason: `Fatal error pattern matched: ${pattern}`, isFatal: true };
+      }
+    }
+  }
+  return null;
 }
 
 // ---- Escalation Evaluation ----
@@ -310,29 +325,33 @@ export function shouldEscalate(
     trustInsufficient?: boolean;
   },
 ): boolean {
-  for (const trigger of policy.escalateOn) {
-    switch (trigger) {
-      case 'high_risk_action':
-        if (conditions.hasHighRiskAction) return true;
-        break;
-      case 'approval_timeout':
-        if (conditions.approvalTimedOut) return true;
-        break;
-      case 'repeated_failure':
-        if ((conditions.consecutiveFailures ?? 0) >= 2) return true;
-        break;
-      case 'unknown_state':
-        if (conditions.isUnknownState) return true;
-        break;
-      case 'intent_unsatisfied':
-        if (conditions.intentSatisfied === false) return true;
-        break;
-      case 'trust_insufficient':
-        if (conditions.trustInsufficient) return true;
-        break;
-    }
+  return policy.escalateOn.some(trigger => checkEscalationTrigger(trigger, conditions));
+}
+
+function checkEscalationTrigger(trigger: EscalationTrigger, conditions: {
+  hasHighRiskAction?: boolean;
+  approvalTimedOut?: boolean;
+  consecutiveFailures?: number;
+  isUnknownState?: boolean;
+  intentSatisfied?: boolean;
+  trustInsufficient?: boolean;
+}): boolean {
+  switch (trigger) {
+    case 'high_risk_action':
+      return !!conditions.hasHighRiskAction;
+    case 'approval_timeout':
+      return !!conditions.approvalTimedOut;
+    case 'repeated_failure':
+      return (conditions.consecutiveFailures ?? 0) >= 2;
+    case 'unknown_state':
+      return !!conditions.isUnknownState;
+    case 'intent_unsatisfied':
+      return conditions.intentSatisfied === false;
+    case 'trust_insufficient':
+      return !!conditions.trustInsufficient;
+    default:
+      return false;
   }
-  return false;
 }
 
 // ---- Internal helpers ----

@@ -9,6 +9,47 @@
 // ===========================================
 
 /**
+ * Generate a timestamp in the standardized format.
+ */
+function generateTimestamp() {
+  return new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, '');
+}
+
+/**
+ * Build a standardized error response when the error definition is unspecified.
+ */
+function buildDefaultErrorResponse(code: string, context: Record<string, unknown>) {
+  return {
+    code,
+    ref: `${code}-${new Date().toISOString()}`,
+    timestamp: new Date().toISOString(),
+    module: 'AUTOMATION',
+    description: `Unknown error code: ${code}`,
+    severity: 'error',
+    recoverable: false,
+    diagnosis: [],
+    context,
+  };
+}
+
+/**
+ * Build the enhanced error response object.
+ */
+function buildEnhancedErrorResponse(def: any, ts: string, context: Record<string, unknown>) {
+  return {
+    code: def.code,
+    ref: `${def.code}-${ts}`,
+    timestamp: new Date().toISOString(),
+    module: 'AUTOMATION',
+    description: def.description,
+    severity: def.severity,
+    recoverable: def.recoverable,
+    diagnosis: [...def.diagnosis],
+    context,
+  };
+}
+
+/**
  * Enhanced error builder v2 — full diagnostic object.
  * Machines read this and know: what broke, when, where in the code,
  * how bad it is, whether to retry, how to fix it, and the runtime
@@ -26,33 +67,13 @@ export function autoError(code: string, context?: Record<string, unknown>): {
   context: Record<string, unknown>;
 } {
   const def = AUTO_ERRORS[code as keyof typeof AUTO_ERRORS];
-  const ts = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, '');
+  const ts = generateTimestamp();
 
   if (!def) {
-    return {
-      code,
-      ref: `${code}-${ts}`,
-      timestamp: new Date().toISOString(),
-      module: 'AUTOMATION',
-      description: `Unknown error code: ${code}`,
-      severity: 'error',
-      recoverable: false,
-      diagnosis: [],
-      context: context || {},
-    };
+    return buildDefaultErrorResponse(code, context || {});
   }
 
-  return {
-    code: def.code,
-    ref: `${def.code}-${ts}`,
-    timestamp: new Date().toISOString(),
-    module: 'AUTOMATION',
-    description: def.description,
-    severity: def.severity,
-    recoverable: def.recoverable,
-    diagnosis: [...def.diagnosis],
-    context: context || {},
-  };
+  return buildEnhancedErrorResponse(def, ts, context || {});
 }
 
 // ===========================================

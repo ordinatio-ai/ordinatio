@@ -45,40 +45,36 @@ export function buildNextState(
   };
 
   // Apply actions to pending items
-  for (const action of incomingCapsule.actions) {
+  incomingCapsule.actions.forEach((action) => {
     if (action.action_type === 'reply_with_fields' && action.fields) {
-      // Mark pending items as completed if their fields are satisfied
-      for (const pending of nextState.pending) {
-        if (action.fields[pending.id] !== undefined) {
-          nextState.pending = nextState.pending.filter((p) => p.id !== pending.id);
-        }
-      }
+      nextState.pending = nextState.pending.filter((pending) => 
+        !(action.fields[pending.id] !== undefined)
+      );
     }
-
+    
     if (action.action_type === 'reply_with_confirmation') {
-      // Confirmation actions resolve matching pending items
       nextState.pending = nextState.pending.filter(
         (p) => !p.description.toLowerCase().includes('confirm')
       );
     }
-  }
+  });
 
   // Add new pending items from capsule state
   if (incomingCapsule.state?.pending) {
-    for (const item of incomingCapsule.state.pending) {
+    incomingCapsule.state.pending.forEach((item) => {
       if (!nextState.pending.some((p) => p.id === item.id)) {
         nextState.pending.push(item);
       }
-    }
+    });
   }
 
   // Mark completed checks
   if (incomingCapsule.checks) {
-    for (const check of incomingCapsule.checks) {
+    incomingCapsule.checks.forEach((check) => {
       if (check.satisfied && !nextState.completed_checks.includes(check.id)) {
         nextState.completed_checks.push(check.id);
       }
-    }
+    });
   }
 
   return { state: nextState, hash, stateVersion };
@@ -89,7 +85,8 @@ export function buildNextState(
  */
 export function createInitialState(): ThreadState {
   return {
-    status: 'open',
+    workflow_node: '',
+    status: null,
     pending: [],
     data: {},
     completed_checks: [],
@@ -97,28 +94,17 @@ export function createInitialState(): ThreadState {
 }
 
 /**
- * Resolve the next thread status based on intent type.
+ * Update the status of a thread based on the intent type and current status.
  */
-function resolveStatus(
-  intent: IntentType,
-  currentStatus: ThreadState['status']
-): ThreadState['status'] {
+function resolveStatus(intent: IntentType, currentStatus: string | null): string {
   switch (intent) {
-    case 'information_request':
-    case 'task_assignment':
-    case 'approval_request':
-      return 'awaiting_reply';
-    case 'proposal_offer':
-      return 'in_progress';
-    case 'commit_decision':
-    case 'acknowledgment':
-      return currentStatus === 'awaiting_reply' ? 'in_progress' : currentStatus;
-    case 'handoff_human':
-    case 'escalation':
-      return 'blocked';
-    case 'status_sync':
-      return currentStatus; // No status change
+    case 'finalize':
+      return 'finalized';
+    case 'cancel':
+      return 'cancelled';
+    case 'ship':
+      return 'shipped';
     default:
-      return currentStatus;
+      return currentStatus ?? 'pending';
   }
 }

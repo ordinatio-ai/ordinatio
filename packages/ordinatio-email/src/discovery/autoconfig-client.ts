@@ -18,26 +18,30 @@ export async function fetchAutoconfig(domain: string): Promise<AutoconfigResult 
   ];
 
   for (const url of urls) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: { 'User-Agent': 'System1701-AutoDiscover/1.0' },
-      });
-      clearTimeout(timeout);
-
-      if (!response.ok) continue;
-
-      const xml = await response.text();
-      const result = parseAutoconfigXml(xml);
-      if (result) return result;
-    } catch {
-      continue;
-    }
+    const result = await tryFetchAutoconfig(url);
+    if (result) return result;
   }
 
   return null;
+}
+
+async function tryFetchAutoconfig(url: string): Promise<AutoconfigResult | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'System1701-AutoDiscover/1.0' },
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) return null;
+
+    const xml = await response.text();
+    return parseAutoconfigXml(xml);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -95,51 +99,13 @@ function parseAutoconfigXml(xml: string): AutoconfigResult | null {
       | 'plain'
       | undefined;
     const authentication = block.match(/<authentication>([^<]+)<\/authentication>/)?.[1];
-
-    if (hostname && port) {
-      result.outgoingServer = {
-        type: 'smtp',
-        hostname,
-        port,
-        socketType: socketType || 'STARTTLS',
-        authentication: authentication || 'password-cleartext',
-      };
-    }
+    result.outgoingServer = {
+      hostname,
+      port,
+      socketType: socketType || 'SSL',
+      authentication: authentication || 'password-cleartext',
+    };
   }
 
-  if (!result.incomingServer && !result.outgoingServer) return null;
-  return result;
-}
-
-/**
- * Convert autoconfig result to a DiscoveredProvider.
- */
-export function autoconfigToProvider(config: AutoconfigResult): DiscoveredProvider | null {
-  if (!config.incomingServer || config.incomingServer.type !== 'imap') return null;
-  if (!config.outgoingServer) return null;
-
-  const mapSecurity = (s: string): 'ssl' | 'starttls' | 'none' => {
-    if (s === 'SSL') return 'ssl';
-    if (s === 'STARTTLS') return 'starttls';
-    return 'none';
-  };
-
-  const isOAuth = config.incomingServer.authentication === 'OAuth2';
-
-  const settings: ImapSmtpSettings = {
-    imapHost: config.incomingServer.hostname,
-    imapPort: config.incomingServer.port,
-    imapSecurity: mapSecurity(config.incomingServer.socketType),
-    smtpHost: config.outgoingServer.hostname,
-    smtpPort: config.outgoingServer.port,
-    smtpSecurity: mapSecurity(config.outgoingServer.socketType),
-  };
-
-  return {
-    type: 'imap',
-    displayName: config.displayName || `${config.incomingServer.hostname}`,
-    authMethod: isOAuth ? 'oauth2' : 'password',
-    settings,
-    confidence: 80,
-  };
+  return result.incomingServer || result.outgoingServer ? result : null;
 }

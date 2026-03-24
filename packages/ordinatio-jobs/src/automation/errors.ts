@@ -14,7 +14,7 @@
  * how bad it is, whether to retry, how to fix it, and the runtime
  * data from the moment it happened.
  */
-export function autoError(code: string, context?: Record<string, unknown>): {
+export function autoError(code: string, context: Record<string, unknown> = {}): {
   code: string;
   ref: string;
   timestamp: string;
@@ -26,32 +26,62 @@ export function autoError(code: string, context?: Record<string, unknown>): {
   context: Record<string, unknown>;
 } {
   const def = AUTO_ERRORS[code as keyof typeof AUTO_ERRORS];
-  const ts = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, '');
+  const ts = formatTimestamp();
 
-  if (!def) {
-    return {
-      code,
-      ref: `${code}-${ts}`,
-      timestamp: new Date().toISOString(),
-      module: 'AUTOMATION',
-      description: `Unknown error code: ${code}`,
-      severity: 'error',
-      recoverable: false,
-      diagnosis: [],
-      context: context || {},
-    };
-  }
+  return def
+    ? buildKnownError(def, ts, context)
+    : buildUnknownError(code, ts, context);
+}
 
+function formatTimestamp(): string {
+  return new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, '');
+}
+
+function buildKnownError(def: typeof AUTO_ERRORS[keyof typeof AUTO_ERRORS], timestamp: string, context: Record<string, unknown>): {
+  code: string;
+  ref: string;
+  timestamp: string;
+  module: string;
+  description: string;
+  severity: string;
+  recoverable: boolean;
+  diagnosis: string[];
+  context: Record<string, unknown>;
+} {
   return {
     code: def.code,
-    ref: `${def.code}-${ts}`,
+    ref: `${def.code}-${timestamp}`,
     timestamp: new Date().toISOString(),
     module: 'AUTOMATION',
     description: def.description,
     severity: def.severity,
     recoverable: def.recoverable,
     diagnosis: [...def.diagnosis],
-    context: context || {},
+    context,
+  };
+}
+
+function buildUnknownError(code: string, timestamp: string, context: Record<string, unknown>): {
+  code: string;
+  ref: string;
+  timestamp: string;
+  module: string;
+  description: string;
+  severity: string;
+  recoverable: boolean;
+  diagnosis: string[];
+  context: Record<string, unknown>;
+} {
+  return {
+    code,
+    ref: `${code}-${timestamp}`,
+    timestamp: new Date().toISOString(),
+    module: 'AUTOMATION',
+    description: `Unknown error code: ${code}`,
+    severity: 'error',
+    recoverable: false,
+    diagnosis: [],
+    context,
   };
 }
 

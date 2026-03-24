@@ -26,22 +26,57 @@ export function autoError(code: string, context?: Record<string, unknown>): {
   context: Record<string, unknown>;
 } {
   const def = AUTO_ERRORS[code as keyof typeof AUTO_ERRORS];
-  const ts = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, '');
+  const ts = generateTimestamp();
 
   if (!def) {
-    return {
-      code,
-      ref: `${code}-${ts}`,
-      timestamp: new Date().toISOString(),
-      module: 'AUTOMATION',
-      description: `Unknown error code: ${code}`,
-      severity: 'error',
-      recoverable: false,
-      diagnosis: [],
-      context: context || {},
-    };
+    return createUnknownError(code, ts, context);
   }
 
+  return createError(def, ts, context);
+}
+
+// Helper to generate a timestamp
+function generateTimestamp(): string {
+  return new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, '');
+}
+
+// Helper to create an unknown error
+function createUnknownError(code: string, ts: string, context?: Record<string, unknown>): {
+  code: string;
+  ref: string;
+  timestamp: string;
+  module: string;
+  description: string;
+  severity: string;
+  recoverable: boolean;
+  diagnosis: string[];
+  context: Record<string, unknown>;
+} {
+  return {
+    code,
+    ref: `${code}-${ts}`,
+    timestamp: new Date().toISOString(),
+    module: 'AUTOMATION',
+    description: `Unknown error code: ${code}`,
+    severity: 'error',
+    recoverable: false,
+    diagnosis: [],
+    context: context || {},
+  };
+}
+
+// Helper to create a known error
+function createError(def: any, ts: string, context?: Record<string, unknown>): {
+  code: string;
+  ref: string;
+  timestamp: string;
+  module: string;
+  description: string;
+  severity: string;
+  recoverable: boolean;
+  diagnosis: string[];
+  context: Record<string, unknown>;
+} {
   return {
     code: def.code,
     ref: `${def.code}-${ts}`,

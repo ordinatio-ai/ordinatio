@@ -92,7 +92,6 @@ export function createEventBus(): EventBus {
         subscribesTo: [],
       };
 
-      // Build subscribers if factory function exists
       if (declaration.buildSubscribers) {
         const handlers = declaration.buildSubscribers(db, modules);
         for (const [eventType, handler] of Object.entries(handlers)) {
@@ -103,47 +102,32 @@ export function createEventBus(): EventBus {
             handler,
             featureGate,
           });
-          registration.subscribesTo.push(eventType);
         }
       }
 
       registrations.push(registration);
     },
 
-    subscribe(eventType: string, handler: EventHandler, moduleName?: string): void {
-      subscriptions.push({
-        moduleName: moduleName ?? '_user',
-        eventType,
-        handler,
-      });
-
-      // Track in registrations if it's a named module
-      if (moduleName) {
-        const reg = registrations.find(r => r.name === moduleName);
-        if (reg && !reg.subscribesTo.includes(eventType)) {
-          reg.subscribesTo.push(eventType);
-        }
-      }
+    subscribe(eventType, handler, moduleName = '*') {
+      subscriptions.push({ moduleName, eventType, handler });
     },
 
-    async emit(event: DomusEvent): Promise<void> {
-      for (const sub of subscriptions) {
-        // Match: exact type OR wildcard
-        if (sub.eventType !== '*' && sub.eventType !== event.type) continue;
+    async emit(event) {
+      const { eventType, payload } = event;
+      const activeSubscriptions = subscriptions.filter(
+        ({ eventType: subType, featureGate }) => (
+          (subType === '*' || subType === eventType) &&
+          (!featureGate || featureFlags[featureGate])
+        )
+      );
 
-        // Don't deliver events back to the module that emitted them
-        if (sub.moduleName === event.source) continue;
-
-        // Check feature gate
-        if (sub.featureGate && !featureFlags[sub.featureGate]) continue;
-
-        // Execute handler — errors are isolated
+      for (const { handler, moduleName } of activeSubscriptions) {
         try {
-          await sub.handler(event);
+          await handler({ type: eventType, payload, moduleName });
         } catch (error) {
           errorLog.push({
             event,
-            subscriber: `${sub.moduleName}:${sub.eventType}`,
+            subscriber: moduleName,
             error: error instanceof Error ? error.message : String(error),
             timestamp: new Date().toISOString(),
           });
@@ -151,40 +135,21 @@ export function createEventBus(): EventBus {
       }
     },
 
-    setFeatureFlags(flags: Record<string, boolean>): void {
-      featureFlags = { ...flags };
+    setFeatureFlags(flags) {
+      featureFlags = flags;
     },
 
-    getTopology(): EventTopology {
-      const modules: EventTopology['modules'] = {};
-      let totalEvents = 0;
-      let totalSubs = 0;
-
-      for (const reg of registrations) {
-        modules[reg.name] = {
-          emits: [...reg.emits],
-          subscribesTo: [...reg.subscribesTo],
-        };
-        totalEvents += reg.emits.length;
-        totalSubs += reg.subscribesTo.length;
-      }
-
-      return {
-        modules,
-        totalEventTypes: totalEvents,
-        totalSubscriptions: totalSubs,
-      };
+    getTopology() {
+      return { subscriptions, featureFlags };
     },
 
     getErrors() {
-      return [...errorLog];
+      return errorLog;
     },
 
-    shutdown(): void {
+    shutdown() {
       subscriptions.length = 0;
       registrations.length = 0;
-      errorLog.length = 0;
-      featureFlags = {};
     },
   };
 }

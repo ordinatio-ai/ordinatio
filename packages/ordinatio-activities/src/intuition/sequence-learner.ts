@@ -80,12 +80,146 @@ function extractObservations(
       const lookahead = Math.min(i + 4, sorted.length);
       for (let j = i + 1; j < lookahead; j++) {
         const next = sorted[j]!;
-        if (next.action !== current.action) {
-          const delayMs = next.createdAt.getTime() - current.createdAt.getTime();
-          // further logic ...
-        }
+        if (next.action === current.action) continue; // skip self-loops
+
+        const delayMs = next.createdAt.getTime() - current.createdAt.getTime();
+        if (delayMs <= 0 || delayMs > maxDelayMs) continue;
+
+        observations.push({
+          fromAction: current.action,
+          toAction: next.action,
+          delayMs,
+          entityScoped: true,
+        });
       }
     }
   }
+
+  // Global sequences (action-level, not entity-scoped)
+  // Group all activities by action, then check temporal ordering
+  const sorted = [...activities].sort(
+    (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
+  );
+
+  for (let i = 0; i < sorted.length; i++) {
+    const current = sorted[i]!;
+    // Only look at the immediate next activity globally
+    if (i + 1 >= sorted.length) break;
+    const next = sorted[i + 1]!;
+    if (next.action === current.action) continue;
+
+    const delayMs = next.createdAt.getTime() - current.createdAt.getTime();
+    if (delayMs <= 0 || delayMs > maxDelayMs) continue;
+
+    // Only record global if NOT already entity-scoped
+    const sameEntity = (current.clientId && current.clientId === next.clientId) ||
+                       (current.orderId && current.orderId === next.orderId);
+    if (!sameEntity) {
+      observations.push({
+        fromAction: current.action,
+        toAction: next.action,
+        delayMs,
+        entityScoped: false,
+      });
+    }
+  }
+
   return observations;
+}
+
+/**
+ * Aggregate raw observations into learned sequences.
+ */
+function aggregateObservations(
+  observations: SequenceObservation[],
+  allActivities: ActivityWithRelations[],
+  cfg: Required<IntuitionConfig>,
+): LearnedSequence[] {
+  // Group by (fromAction, toAction, entityScoped)
+  const groups = new Map<string, SequenceObservation[]>();
+
+  for (const obs of observations) {
+    const key = `${obs.fromAction}|${obs.toAction}|${obs.entityScoped}`;
+    const group = groups.get(key);
+    if (group) {
+      group.push(obs);
+    } else {
+      groups.set(key, [obs]);
+    }
+  }
+
+  // Count total occurrences of each fromAction for confidence calculation
+  const fromActionCounts = new Map<string, number>();
+  for (const activity of allActivities) {
+    fromActionCounts.set(
+      activity.action,
+      (fromActionCounts.get(activity.action) ?? 0) + 1
+
+    );
+  }
+
+  const sequences: LearnedSequence[] = [];
+
+  for (const [key, group] of groups) {
+    if (group.length < cfg.minOccurrences) continue;
+
+    const [fromAction, toAction, scopeStr] = key.split('|') as [string, string, string];
+    const entityScoped = scopeStr === 'true';
+    const delays = group.map(o => o.delayMs).sort((a, b) => a - b);
+    const medianDelayMs = median(delays);
+    const p90DelayMs = percentile(delays, 0.9);
+    const totalFromAction = fromActionCounts.get(fromAction) ?? 1;
+    const confidence = group.length / totalFromAction;
+
+    if (confidence < cfg.minConfidence) continue;
+
+    sequences.push({
+      fromAction,
+      toAction,
+      occurrences: group.length,
+      medianDelayMs,
+      p90DelayMs,
+      confidence,
+      entityScoped,
+    });
+  }
+
+  // Sort by confidence descending, then occurrences descending
+  return sequences.sort((a, b) =>
+    b.confidence - a.confidence || b.occurrences - a.occurrences
+  );
+}
+
+// ---- Helpers ----
+
+function groupByField(
+  activities: ActivityWithRelations[],
+  field: 'clientId' | 'orderId',
+): Array<[string, ActivityWithRelations[]]> {
+  const groups = new Map<string, ActivityWithRelations[]>();
+  for (const activity of activities) {
+    const value = activity[field];
+    if (!value) continue;
+    const group = groups.get(value);
+    if (group) {
+      group.push(activity);
+    } else {
+      groups.set(value, [activity]);
+    }
+  }
+  return Array.from(groups.entries());
+}
+
+function median(sorted: number[]): number {
+  if (sorted.length === 0) return 0;
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1]! + sorted[mid]!) / 2
+    : sorted[mid]!;
+}
+
+function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  const idx = Math.ceil(p * sorted.length) - 1;
+  return sorted[Math.max(0, idx)]!;
 }

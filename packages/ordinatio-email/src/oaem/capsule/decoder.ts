@@ -47,20 +47,24 @@ function fromBase64Url(str: string): Uint8Array {
  * Validate minimum required fields for a valid CapsulePayload.
  */
 function isValidCapsule(obj: unknown): boolean {
-  if (!obj || typeof obj !== 'object') return false;
-  const o = obj as Record<string, unknown>;
+  if (
+    !obj ||
+    typeof obj !== 'object' ||
+    obj.spec !== 'ai-instructions' ||
+    obj.version !== '1.1' ||
+    obj.type !== 'email_capsule' ||
+    typeof obj.issued_at !== 'number' ||
+    typeof obj.issuer !== 'string' ||
+    obj.issuer.length === 0 ||
+    !obj.thread ||
+    typeof obj.thread !== 'object' ||
+    typeof obj.intent !== 'string' ||
+    !INTENT_TYPES.includes(obj.intent as typeof INTENT_TYPES[number]) ||
+    !Array.isArray(obj.actions)
+  ) {
+    return false;
+  }
 
-  if (o.spec !== 'ai-instructions') return false;
-  if (o.version !== '1.1') return false;
-  if (o.type !== 'email_capsule') return false;
-  if (typeof o.issued_at !== 'number') return false;
-  if (typeof o.issuer !== 'string' || o.issuer.length === 0) return false;
-  if (!o.thread || typeof o.thread !== 'object') return false;
-  if (typeof o.intent !== 'string' || !INTENT_TYPES.includes(o.intent as typeof INTENT_TYPES[number])) return false;
-  if (!Array.isArray(o.actions)) return false;
-
-  const thread = o.thread as Record<string, unknown>;
-  if (typeof thread.id !== 'string' || thread.id.length === 0) return false;
-
-  return true;
+  const thread = obj.thread as Record<string, unknown>;
+  return typeof thread.id === 'string' && thread.id.length > 0;
 }
